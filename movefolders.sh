@@ -1,33 +1,48 @@
 #!/bin/bash
+# auto-move folders between VPS using a shared SSH key
+# fully automated - no password or prompt required
 
-# Prompt for inputs
+# Prompt user
 read -p "Enter the folder(s) to move (space-separated): " SRC
 read -p "Enter target VPS IP: " TARGET_IP
-read -p "Enter SSH username: " USER
-read -p "Enter destination path on target VPS: " DEST
-read -s -p "Enter SSH password (leave empty if using key): " SSHPASS
-echo ""
+read -p "Enter SSH username [default: root]: " USER
+USER=${USER:-root}
+read -p "Enter destination path on target VPS [default: /root/]: " DEST
+DEST=${DEST:-/root/}
 
-# Check if sshpass is installed (used for password auth)
-if ! command -v sshpass &> /dev/null; then
-  echo "Installing sshpass..."
+# Variables
+SSH_KEY="/root/.ssh/id_rsa"
+RSYNC_OPTS="-avz --progress"
+SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+# Check if key exists
+if [ ! -f "$SSH_KEY" ]; then
+  echo "❌ SSH key not found at $SSH_KEY"
+  echo "Please place your private key there and run again."
+  exit 1
+fi
+
+# Make sure rsync is installed
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "Installing rsync..."
   if [ -x "$(command -v apt)" ]; then
-    sudo apt install -y sshpass
+    apt install -y rsync
   elif [ -x "$(command -v yum)" ]; then
-    sudo yum install -y sshpass
-  else
-    echo "Please install sshpass manually."
-    exit 1
+    yum install -y rsync
   fi
 fi
 
-# Transfer using rsync
-if [ -z "$SSHPASS" ]; then
-  echo "Transferring with SSH key..."
-  rsync -avz -e ssh $SRC $USER@$TARGET_IP:$DEST
-else
-  echo "Transferring with password..."
-  sshpass -p "$SSHPASS" rsync -avz -e ssh $SRC $USER@$TARGET_IP:$DEST
-fi
+# Execute transfer
+echo ""
+echo "🚀 Starting transfer from $(hostname) → $USER@$TARGET_IP:$DEST"
+echo ""
 
-echo "✅ Transfer complete!"
+rsync $RSYNC_OPTS -e "ssh $SSH_OPTS" $SRC $USER@$TARGET_IP:$DEST
+
+if [ $? -eq 0 ]; then
+  echo ""
+  echo "✅ Transfer complete!"
+else
+  echo ""
+  echo "❌ Transfer failed! Check SSH key or destination path."
+fi
